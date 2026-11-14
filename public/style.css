@@ -11,3 +11,15 @@
 .reading-active { background:linear-gradient(105deg,#ffe79d55,#d9c9ff66,#c6f8df66); }
 .reading-word { background:#ffe29baa; border-radius:.2em; text-shadow:0 0 .65em #fff; box-shadow:0 0 .6em #ffd67688; }
 #settings-form fieldset { display:grid; gap:.85rem; border:1px solid #b8c8b7; border-radius:.8rem; padding:1rem; }
+
+.scene-figure { padding: 0; overflow: hidden; background: #f0e9db; }
+.scene-figure img { display: block; width: 100%; height: auto; }
+.scene-figure figcaption { padding: 1.1rem; }
+.scene-figure button { margin: 0 0 1rem; }
+.book-paper { transform-origin: left top; }
+.book-opening { animation: book-unfold .75s cubic-bezier(.18,.78,.24,1) both; }
+@keyframes book-unfold {
+  from { transform: perspective(1600px) rotateY(-26deg) skewY(-1deg); filter: brightness(.84); box-shadow: 20px 8px 24px #3f2e2038; }
+  to { transform: perspective(1600px) rotateY(0); filter: brightness(1); box-shadow: 0 0 0 #3f2e2000; }
+}
+@media (prefers-reduced-motion: reduce) { .book-opening { animation: none; } }

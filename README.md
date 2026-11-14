@@ -61,7 +61,7 @@ Themes include **Enchanted forest**, **Space explorers**, **Ocean wonders**, and
 
 ## Cloud configuration
 
-AI settings lets you select cloud or local providers for text, speech, image, and video, and override cloud model IDs. Provider keys stay on the server. The reader offers voice and pace presets, illustrated scene markers, and highlights the current passage. If cloud video is unavailable, the browser records a short animated story preview that you can download. Browser MediaRecorder support is required.
+AI settings lets you select cloud or local providers for text, speech, image, and video, and override cloud model IDs. Provider keys stay on the server. The reader offers voice and pace presets, scene illustrations prompted from the adjacent paragraph, and highlights the current passage. The downloadable story video pairs chapter illustrations with cached ElevenLabs or Kokoro narration. When Hugging Face motion is available, it animates the opening scene. The browser otherwise pans and zooms the illustrations. Keep the reader tab visible while MediaRecorder records the video.
 
 Copy `.env.example` to `.env.local` and fill in your keys. The server loads this file on startup. Restart after changing it. Keep `.env.local` outside Git.
 

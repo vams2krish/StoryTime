@@ -75,7 +75,7 @@ app.post('/api/story',async(req,res,next)=>{try{
  try {res.json({...parseChapter(data.message.content),provider:'Ollama'});}
  catch(e){if(e instanceof SyntaxError) throw Error('The model returned an incomplete story. Retry or choose another local story model in Settings.');throw e;}
  }catch(e){next(e)}});
-app.post('/api/cover',async(req,res,next)=>{try{if(providers.media && req.body.imageProvider!=='automatic'){try{const image=await cloudMedia('image', 'Gentle child-friendly watercolor picture book cover, no text. '+String(req.body.prompt).slice(0,1200),req.body.imageModel);if(!['image/png','image/jpeg','image/webp'].includes(image.type))throw Error('Missing cover');return res.json({image:'data:'+image.type+';base64,'+Buffer.from(await image.arrayBuffer()).toString('base64'),provider:'Hugging Face'});}catch{console.warn('Hugging Face cover unavailable. Trying Automatic1111.');}}const r=await request(localURL(req.body.automatic,'http://localhost:7860')+'/sdapi/v1/txt2img',{prompt:`children's picture book illustration, soft watercolor, warm moonlight, cozy, whimsical, ${String(req.body.prompt).slice(0,1200)}`,negative_prompt:'text, letters, watermark, scary, violence, nudity',steps:20,width:512,height:640,batch_size:1});const data=await r.json();if(!data.images?.[0])throw Error('No image returned.');res.json({image:'data:image/png;base64,'+data.images[0]});}catch(e){next(e)}});
+app.post('/api/cover',async(req,res,next)=>{try{if(providers.media && req.body.imageProvider!=='automatic'){try{const image=await cloudMedia('image', (req.body.scene?'Gentle child-friendly watercolor scene, no text. ':'Gentle child-friendly watercolor picture book cover, no text. ')+String(req.body.prompt).slice(0,1200),req.body.imageModel);if(!['image/png','image/jpeg','image/webp'].includes(image.type))throw Error('Missing cover');return res.json({image:'data:'+image.type+';base64,'+Buffer.from(await image.arrayBuffer()).toString('base64'),provider:'Hugging Face'});}catch{console.warn('Hugging Face cover unavailable. Trying Automatic1111.');}}const r=await request(localURL(req.body.automatic,'http://localhost:7860')+'/sdapi/v1/txt2img',{prompt:`children's picture book illustration, soft watercolor, warm moonlight, cozy, whimsical, ${String(req.body.prompt).slice(0,1200)}`,negative_prompt:'text, letters, watermark, scary, violence, nudity',steps:20,width:req.body.scene?640:512,height:req.body.scene?384:640,batch_size:1});const data=await r.json();if(!data.images?.[0])throw Error('No image returned.');res.json({image:'data:image/png;base64,'+data.images[0]});}catch(e){next(e)}});
 app.post('/api/speech', async (req, res, next) => {
   try {
     const text = String(req.body.text || '').slice(0, 10000);
@@ -86,7 +86,7 @@ app.post('/api/speech', async (req, res, next) => {
     }
     if (!req.body.tts) return res.status(503).json({error:'Cloud narration unavailable. Use a device voice.'});
     const local = await request(localURL(req.body.tts, 'http://localhost:8880') + '/v1/audio/speech', {
-      model:'kokoro', input:text, voice:req.body.voice || 'af_heart', speed:0.85, response_format:'mp3'
+      model:'kokoro', input:text, voice:req.body.voice || 'af_heart', speed:[0.8,0.95,1.08].includes(req.body.speed)?req.body.speed:0.85, response_format:'mp3'
     });
     res.type('audio/mpeg').send(Buffer.from(await local.arrayBuffer()));
   } catch (error) {next(error);}
