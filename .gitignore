@@ -3,3 +3,5 @@ node_modules/
 test-results/
 preview.png
 .local-demo/
+!.env.example
+.storytime-cache/

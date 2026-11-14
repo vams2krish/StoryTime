@@ -1,8 +1,8 @@
 # StoryTime
 
-**Little stories. Big dreams.** A cozy AI storytelling app for children and the grown-ups who read with them, powered by local models.
+**Little stories. Big dreams.** A cozy AI storytelling app for children and the grown-ups who read with them, with cloud AI and local fallbacks.
 
-StoryTime turns a child's favorite character into personalized bedtime stories, interactive adventures, printable books, and narrated reading sessions. It uses **Ollama** for story text, **Automatic1111** for cover illustrations, and an optional **local Kokoro-compatible speech service** for AI narration.
+StoryTime turns a child's favorite character into personalized bedtime stories, interactive adventures, printable books, and narrated reading sessions. It uses **OpenRouter** for story text, **ElevenLabs** for speech, and **Hugging Face Inference Providers** for cover art and short story videos. Ollama, Automatic1111, and device voices or Kokoro provide local fallbacks.
 
 ![StoryTime home screen with a moonlit cottage illustration](docs/images/demo-home.jpg)
 
@@ -58,6 +58,22 @@ Themes include **Enchanted forest**, **Space explorers**, **Ocean wonders**, and
 - **PDFs:** jsPDF, generated in the browser.
 - **Storage:** Browser `localStorage`; no database or account required.
 - **Tests:** Node.js test runner with mock local AI services.
+
+## Cloud configuration
+
+Copy `.env.example` to `.env.local` and fill in your keys. The server loads this file on startup. Restart after changing it. Keep `.env.local` outside Git.
+
+| Environment variable | Used for |
+| --- | --- |
+| `OPENROUTER_API_KEY` | Primary story generation. The default `OPENROUTER_MODEL` is `openrouter/free`. Ollama takes over if the cloud request fails or does not produce a usable chapter. |
+| `ELEVENLABS_API_KEY` | Primary narration. Set `ELEVENLABS_VOICE_ID` to a voice available to your account. Playback falls back to local Kokoro when configured, then to a device voice. |
+| `HF_TOKEN` | Hugging Face token with Inference Providers permission. Defaults are FLUX.1-schnell for covers and Wan 2.2 TI2V for video. Automatic1111 is the cover fallback. |
+
+Hugging Face provides a small free monthly credit allowance. Video may exceed that allowance. Check the estimate and remaining balance before enabling cloud media. StoryTime does not purchase credits.
+
+ElevenLabs audio is saved in the ignored `.storytime-cache/` folder. Identical narration text and voice settings reuse the same file, including across restarts. Concurrent requests for the same narration share one provider call. A changed script or voice produces new audio.
+
+Navigation uses browser URLs and history. Story links reopen books stored in the same browser. Progress bars show when story, chapter, cover, voice, or video generation is waiting for a provider.
 
 ## Quick start
 
@@ -156,14 +172,15 @@ StoryTime/
 
 ## API overview
 
-All app endpoints accept JSON via `POST`. Configured service origins must use `localhost`, `127.0.0.1`, or IPv6 loopback.
+Generation endpoints accept JSON via `POST`. `GET /api/providers` reports which cloud providers are configured. Configured service origins must use `localhost`, `127.0.0.1`, or IPv6 loopback.
 
 | Route | Purpose |
 | --- | --- |
 | `/api/models` | Discover local Ollama completion models. |
 | `/api/story` | Generate a complete story or adventure chapter from hero, theme, history, and choice. |
 | `/api/cover` | Request an illustration and return a PNG data URL. |
-| `/api/speech` | Send text to a configured local speech service and return MP3 audio. |
+| `/api/speech` | Return cached or newly generated narration as MP3. |
+| `/api/video` | Generate and return a short video with the configured Hugging Face model. |
 
 ## Tests and verification
 
@@ -171,7 +188,7 @@ All app endpoints accept JSON via `POST`. Configured service origins must use `l
 npm test
 ```
 
-Five automated API tests cover model filtering, hero preferences and adventure history, final chapter choices, placeholder choice rejection, localhost restrictions, and cover response formatting. These tests use mock services and need no downloaded models.
+Automated tests cover narration deduplication, and API tests cover model filtering, hero preferences and adventure history, final chapter choices, placeholder choice rejection, localhost restrictions, and cover response formatting. These tests use mock services and need no downloaded models.
 
 ### Live demo
 

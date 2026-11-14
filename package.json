@@ -1,18 +1,19 @@
 {
   "name": "storytime",
   "version": "1.0.0",
-  "description": "Local AI bedtime storytelling with personalized heroes, interactive adventures, illustrated PDF books, narration, and reading rewards.",
+  "description": "AI bedtime stories with OpenRouter, ElevenLabs narration, Hugging Face images and video, and local Ollama fallback.",
   "main": "index.js",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "dev": "node server.mjs",
-    "start": "node server.mjs"
+    "dev": "node --env-file-if-exists=.env.local server.mjs",
+    "start": "node --env-file-if-exists=.env.local server.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@huggingface/inference": "^4.13.32",
     "express": "^5.3.0",
     "jspdf": "^4.2.1"
   }
