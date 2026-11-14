@@ -44,6 +44,8 @@ app.post('/api/story',async(req,res,next)=>{try{
  function parseChapter(content) {
  const story=JSON.parse(content);
  if(typeof story?.title!=='string'||!story.title.trim()||!Array.isArray(story.paragraphs)||!story.paragraphs.length||!story.paragraphs.every(p=>typeof p==='string'&&p.trim())) throw Error('The model returned an incomplete story. Please try again.');
+ story.paragraphs=story.paragraphs.filter(paragraph=>!/^choices[\s:\[\](){},]*$/i.test(paragraph.trim()));
+ if(!story.paragraphs.length) throw Error('The model returned an incomplete story. Please try again.');
  story.choices=ending?[]:[...new Set((Array.isArray(story.choices)?story.choices:[])
    .filter(choice=>typeof choice==='string')
    .map(choice=>choice.trim())
