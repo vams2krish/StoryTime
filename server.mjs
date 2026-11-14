@@ -1,5 +1,16 @@
 import express from 'express';
 const app = express();
+const storyGpuLayers = process.env.STORYTIME_OLLAMA_GPU_LAYERS;
+const chapterFormat = {
+  type: 'object',
+  properties: {
+    title: {type: 'string'},
+    paragraphs: {type: 'array', minItems: 2, maxItems: 5, items: {type: 'string'}},
+    choices: {type: 'array', maxItems: 3, items: {type: 'string'}},
+    coverPrompt: {type: 'string'}
+  },
+  required: ['title', 'paragraphs', 'choices', 'coverPrompt']
+};
 app.use(express.json({limit:'2mb'}));
 app.use(express.static('public'));
 app.use('/vendor',express.static('node_modules/jspdf/dist'));
@@ -19,11 +30,27 @@ app.post('/api/story',async(req,res,next)=>{try{
  if(!hero?.name||!hero?.color||!hero?.animal||!model) throw Error('Choose a hero and a local model first.');
  if(history.length>4) throw Error('This adventure has reached its ending.');
  const ending=!adventure||history.length>=2;
- const prompt=`Write a gentle bedtime story for children ages 4–8. No violence, frightening content, or adult subjects. Main hero: ${JSON.stringify(hero)}. Include their favorite color and animal naturally. Theme: ${String(theme).slice(0,100)}. ${adventure?'This is an interactive adventure.':'Write a complete story with a comforting ending.'} ${history.length?`Previous story chapters and choices: ${JSON.stringify(history).slice(0,18000)}. The child chose: ${String(choice).slice(0,200)}. Continue directly and make that choice change events.`:''} ${ending?'Finish with a warm, satisfying ending. Return no choices.':'End at a decision and give exactly 2 or 3 short, distinct child-friendly choices.'} Return JSON only: {"title":"story title", "paragraphs":["paragraph", "paragraph", "paragraph"], "choices":["choice"], "coverPrompt":"brief illustration description with no text"}. Each chapter should be 180–280 words. Do not include markdown.`;
- const r=await request(localURL(req.body.ollama,'http://localhost:11434')+'/api/chat',{model,stream:false,format:'json',messages:[{role:'user',content:prompt}],options:{temperature:0.8,num_predict:1600,num_ctx:4096}});
- const data=await r.json();const story=JSON.parse(data.message.content);
+ const prompt=`Write a gentle bedtime story for children ages 4–8. No violence, frightening content, or adult subjects. Main hero: ${JSON.stringify(hero)}. Include their favorite color and animal naturally. Theme: ${String(theme).slice(0,100)}. ${adventure?'This is an interactive adventure.':'Write a complete story with a comforting ending.'} ${history.length?`Previous story chapters and choices: ${JSON.stringify(history).slice(0,18000)}. The child chose: ${String(choice).slice(0,200)}. Continue directly and make that choice change events.`:''} ${ending?'Finish with a warm, satisfying ending. Return no choices.':'End at a decision and give exactly 2 or 3 short, distinct child-friendly choices.'} Fill the structured fields with original content. Write 2–4 prose paragraphs totaling about 180 words. The choices must be specific actions tied to the scene, such as following a trail or asking a character for help. Put choice actions only in choices. Write a short visual description in coverPrompt. Do not include markdown.`;
+ const r=await request(localURL(req.body.ollama,'http://localhost:11434')+'/api/chat',{
+   model, stream: false, think: false, format: chapterFormat,
+   messages: [{role: 'user', content: prompt}],
+   options: {
+     temperature: 0.65, num_predict: 1200, num_ctx: 4096,
+     ...(/^\d+$/.test(storyGpuLayers ?? '') ? {num_gpu: Number(storyGpuLayers)} : {})
+   }
+ });
+ const data=await r.json();
+ let story;
+ try {
+   story=JSON.parse(data.message.content);
+ } catch {
+   throw Error('The model returned an incomplete story. Retry or choose another local story model in Settings.');
+ }
  if(typeof story.title!=='string'||!Array.isArray(story.paragraphs)||!story.paragraphs.length||!story.paragraphs.every(p=>typeof p==='string'&&p.trim())) throw Error('The model returned an incomplete story. Please try again.');
- story.choices=ending?[]:(story.choices||[]).filter(c=>typeof c==='string').slice(0,3);
+ story.choices=ending?[]:[...new Set((Array.isArray(story.choices)?story.choices:[])
+   .filter(choice=>typeof choice==='string')
+   .map(choice=>choice.trim())
+   .filter(choice=>choice && !/^(?:choice|option)\s*\d*$/i.test(choice)))].slice(0,3);
  if(!ending&&story.choices.length<2) throw Error('The model did not provide adventure choices. Please try again.');
  res.json(story);
  }catch(e){next(e)}});
