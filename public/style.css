@@ -23,3 +23,19 @@
   to { transform: perspective(1600px) rotateY(0); filter: brightness(1); box-shadow: 0 0 0 #3f2e2000; }
 }
 @media (prefers-reduced-motion: reduce) { .book-opening { animation: none; } }
+
+.home-links,.reader-tabs {display:flex;gap:1rem;flex-wrap:wrap;margin-top:1.2rem}
+.reader-tabs {margin-bottom:1rem;border-bottom:1px solid #c8c7ad;padding-bottom:.8rem}
+.reader-tabs [aria-pressed=true] {background:#315447;color:white}
+.visual-panel[hidden] {display:none}
+.book-paper {position:relative;transform-origin:left center}
+.book-opening {animation: book-unfold 1.15s cubic-bezier(.17,.73,.25,1) both}
+.book-opening::after {content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(94deg,#281b0e99,transparent 35%,#fff5d9a0 69%,transparent);animation: fold-shadow 1.15s ease-out both}
+@keyframes book-unfold {
+  0% {transform:perspective(1500px) rotateY(-66deg) translateX(-5%) scale(.94);filter:brightness(.66);box-shadow:36px 16px 32px #392a1e6b}
+  57% {transform:perspective(1500px) rotateY(12deg);filter:brightness(1.08);box-shadow:12px 10px 24px #392a1e46}
+  80% {transform:perspective(1500px) rotateY(-4deg)}
+  100% {transform:none;filter:none;box-shadow:none}
+}
+@keyframes fold-shadow {0% {opacity:.95} 65% {opacity:.3} 100% {opacity:0}}
+@media (prefers-reduced-motion:reduce) {.book-opening,.book-opening::after {animation:none}.book-opening::after{display:none}}

@@ -23,14 +23,17 @@ async function postJson(url, headers, body, name) {
   return response;
 }
 
-export async function cloudStory(prompt, schema, model) {
+export async function cloudStory(prompt, schema, model, structured = true) {
   const response = await postJson('https://openrouter.ai/api/v1/chat/completions', {
     Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`
   }, {
     model: model || process.env.OPENROUTER_MODEL || 'openrouter/free',
-    messages: [{role: 'user', content: prompt}],
-    response_format: {type: 'json_schema', json_schema: {name: 'story_chapter', strict: true, schema}},
-    provider: {require_parameters: true},
+    messages: [{role: 'user', content: structured ? prompt :
+      prompt + '\nReturn only a JSON object with string title, array of strings paragraphs, array of strings choices, and string coverPrompt.'}],
+    ...(structured ? {
+      response_format: {type:'json_schema',json_schema:{name:'story_chapter',strict:true,schema}},
+      provider:{require_parameters:true}
+    } : {}),
     max_tokens: 2500
   }, 'OpenRouter');
   return (await response.json()).choices?.[0]?.message?.content;
@@ -38,16 +41,17 @@ export async function cloudStory(prompt, schema, model) {
 
 export function cloudSpeech(text, options = {}) {
   const voice = options.voice || process.env.ELEVENLABS_VOICE_ID || 'EXAVITQu4vr4xnSDxMaL';
-  const model = options.model || process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5';
+  const language = options.language || 'en';
+  const model = options.model || (language !== 'en' ? 'eleven_v3' : process.env.ELEVENLABS_MODEL || 'eleven_flash_v2_5');
   const speed = options.speed || 0.85;
-  const id = createHash('sha256').update(JSON.stringify([text, voice, model, speed, 0.65, 0.7, 'mp3_44100_128'])).digest('hex');
+  const id = createHash('sha256').update(JSON.stringify([text, voice, model, speed, language, 0.65, 0.7, 'mp3_44100_128'])).digest('hex');
   if (!audioCache.has(id)) {
     audioCache.set(id, (async () => {
       const dir = '.storytime-cache';
       const file = join(dir, id + '.mp3');
       try { return await readFile(file); }
       catch (error) { if (error.code !== 'ENOENT') throw error; }
-      const audio = await generateSpeech(text, voice, model, speed);
+      const audio = await generateSpeech(text, voice, model, speed, language);
       await mkdir(dir, {recursive: true});
       await writeFile(file, audio);
       return audio;
@@ -56,12 +60,13 @@ export function cloudSpeech(text, options = {}) {
   return audioCache.get(id);
 }
 
-async function generateSpeech(text, voice, model, speed) {
+async function generateSpeech(text, voice, model, speed, language) {
   const response = await postJson(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
     'xi-api-key': process.env.ELEVENLABS_API_KEY
   }, {
     text,
     model_id: model,
+    ...(model === 'eleven_v3' ? {} : {language_code:language}),
     voice_settings: {speed, stability: 0.65, similarity_boost: 0.7}
   }, 'ElevenLabs');
   if (!response.headers.get('content-type')?.startsWith('audio/')) throw new Error('ElevenLabs returned no audio');

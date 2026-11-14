@@ -35,32 +35,58 @@ async function request(url, body, timeout=180000) {
  return r;
 }
 app.post('/api/models',async(req,res,next)=>{try{const r=await request(localURL(req.body.ollama,'http://localhost:11434')+'/api/tags'); const data=await r.json();res.json({models:data.models.filter(m=>!m.remote_host&&!m.name.includes(':cloud')&&(!m.capabilities||m.capabilities.includes('completion'))).map(m=>m.name)});}catch(e){next(e)}});
+function storyLocale(value) {
+  const code = String(value || 'en');
+  return /^[a-z]{2,3}$/.test(code) ? code : 'en';
+}
 app.post('/api/story',async(req,res,next)=>{try{
- const {hero,theme,adventure,history=[],choice,model}=req.body;
+ const {hero,theme,language,adventure,history=[],choice,model}=req.body;
  if(!hero?.name||!hero?.color||!hero?.animal) throw Error('Choose a hero first.');
  if(history.length>4) throw Error('This adventure has reached its ending.');
  const ending=!adventure||history.length>=2;
- const prompt=`Write a gentle bedtime story for children ages 4–8. No violence, frightening content, or adult subjects. Main hero: ${JSON.stringify(hero)}. Include their favorite color and animal naturally. Theme: ${String(theme).slice(0,100)}. ${adventure?'This is an interactive adventure.':'Write a complete story with a comforting ending.'} ${history.length?`Previous story chapters and choices: ${JSON.stringify(history).slice(0,18000)}. The child chose: ${String(choice).slice(0,200)}. Continue directly and make that choice change events.`:''} ${ending?'Finish with a warm, satisfying ending. Return no choices.':'End at a decision and give exactly 2 or 3 short, distinct child-friendly choices.'} Fill the structured fields with original content. Write 2–4 prose paragraphs totaling about 180 words. The choices must be specific actions tied to the scene, such as following a trail or asking a character for help. Put choice actions only in choices. Write a short visual description in coverPrompt. Do not include markdown.`;
+ const locale=storyLocale(language);
+ const prompt=`Write the title, prose and all choices in the native script of ${new Intl.DisplayNames(['en'],{type:'language'}).of(locale)}. Keep coverPrompt in English for the illustration model. If the theme is Surprise me, pick a comforting setting. Write a gentle bedtime story for children ages 4–8. No violence, frightening content, or adult subjects. Main hero: ${JSON.stringify(hero)}. Include their favorite color and animal naturally. Theme: ${String(theme).slice(0,100)}. ${adventure?'This is an interactive adventure.':'Write a complete story with a comforting ending.'} ${history.length?`Previous story chapters and choices: ${JSON.stringify(history).slice(0,18000)}. The child chose: ${String(choice).slice(0,200)}. Continue directly and make that choice change events.`:''} ${ending?'Finish with a warm, satisfying ending. Return no choices.':'End at a decision and give exactly 2 or 3 short, distinct child-friendly choices.'} Fill the structured fields with original content. Write 2–4 prose paragraphs totaling about 180 words. The choices must be specific actions tied to the scene, such as following a trail or asking a character for help. Put choice actions only in choices. Write a short visual description in coverPrompt. Do not include markdown.`;
  function parseChapter(content) {
- const story=JSON.parse(content);
+ const cleaned=String(content||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
+ const first=cleaned.indexOf('{'),last=cleaned.lastIndexOf('}');
+ const story=JSON.parse(first>=0&&last>=first?cleaned.slice(first,last+1):cleaned);
  if(typeof story?.title!=='string'||!story.title.trim()||!Array.isArray(story.paragraphs)||!story.paragraphs.length||!story.paragraphs.every(p=>typeof p==='string'&&p.trim())) throw Error('The model returned an incomplete story. Please try again.');
+ const expectedScript = {zh:/\p{Script=Han}/gu,te:/\p{Script=Telugu}/gu,hi:/\p{Script=Devanagari}/gu,ta:/\p{Script=Tamil}/gu}[locale];
+ const prose = story.paragraphs.join(' ');
+ if(expectedScript && (prose.match(expectedScript)?.length || 0) < (prose.match(/\p{L}/gu)?.length || 1) * .55) throw Error('The model did not write in the selected language. Please retry.');
  story.paragraphs=story.paragraphs.filter(paragraph=>!/^choices[\s:\[\](){},]*$/i.test(paragraph.trim()));
  if(!story.paragraphs.length) throw Error('The model returned an incomplete story. Please try again.');
  story.choices=ending?[]:[...new Set((Array.isArray(story.choices)?story.choices:[])
    .filter(choice=>typeof choice==='string')
    .map(choice=>choice.trim())
    .filter(choice=>choice && !/^(?:choice|option)\s*\d*$/i.test(choice)))].slice(0,3);
- if(!ending&&story.choices.length<3) {
+ if(!ending&&story.choices.length<3&&(locale==='en'||['zh','te','hi','ta'].includes(locale))) {
    const scene=story.paragraphs.at(-1);
-   const suggestions=/forest|woods|tree/i.test(scene)?['Follow the trail between the trees','Ask a woodland friend for help','Pause and listen to the forest']:/sea|ocean|shore/i.test(scene)?['Explore along the shore','Ask a sea creature for help','Look for clues by the water']:['Look nearby for a clue','Ask a friend what they noticed','Take a quiet moment to make a plan'];
+   const localized = {
+     zh:['在附近找线索','请好朋友帮忙','停下来想个办法'],
+     te:['దగ్గరలో ఆధారాన్ని వెతుకు','స్నేహితుడిని సహాయం అడుగు','ఒక్క క్షణం ఆగి ఆలోచించు'],
+     hi:['आसपास कोई सुराग ढूँढो','किसी दोस्त से मदद माँगो','रुककर एक योजना बनाओ'],
+     ta:['அருகில் ஒரு தடயத்தைத் தேடு','நண்பரிடம் உதவி கேள்','சற்று நின்று யோசி']
+   };
+   const suggestions=localized[locale] || (/forest|woods|tree/i.test(scene)?['Follow the trail between the trees','Ask a woodland friend for help','Pause and listen to the forest']:/sea|ocean|shore/i.test(scene)?['Explore along the shore','Ask a sea creature for help','Look for clues by the water']:['Look nearby for a clue','Ask a friend what they noticed','Take a quiet moment to make a plan']);
    const combined=[...new Set([...story.choices,...suggestions])].slice(0,3);
    story.choices=combined;
  }
+ if(!ending&&story.choices.length<2) throw Error('The model did not return enough choices in the selected language. Try again.');
  return story;
  }
  if(providers.openrouter && req.body.textProvider!=='ollama'){
-   try {return res.json({...parseChapter(await cloudStory(prompt,chapterFormat,req.body.openrouterModel)),provider:'OpenRouter'});}
-   catch {console.warn('OpenRouter did not return a usable chapter. Trying Ollama.');}
+   const selected = req.body.openrouterModel;
+   const multilingual = locale!=='en';
+   const preferred = selected || (multilingual ? process.env.MULTILINGUAL_STORY_MODEL || 'baidu/ernie-5.5-flash-preview:free' : undefined);
+   try {return res.json({...parseChapter(await cloudStory(prompt,chapterFormat,preferred,!multilingual)),provider:'OpenRouter'});}
+   catch {
+     if(multilingual){
+       try {return res.json({...parseChapter(await cloudStory(prompt,chapterFormat,selected,true)),provider:'OpenRouter'});}
+       catch {console.warn('OpenRouter retry did not return a usable localized chapter.');}
+     }
+     console.warn('OpenRouter did not return a usable chapter. Trying Ollama.');
+   }
  }
  if(!model || /:cloud$/i.test(model)) throw Error('Choose an installed Ollama fallback model in Settings.');
  const r=await request(localURL(req.body.ollama,'http://localhost:11434')+'/api/chat',{
@@ -81,7 +107,7 @@ app.post('/api/speech', async (req, res, next) => {
     const text = String(req.body.text || '').slice(0, 10000);
     if (!text.trim()) return res.status(400).json({error:'No story text to narrate.'});
     if (providers.elevenlabs && !['kokoro','device'].includes(req.body.speechProvider)) {
-      try {return res.type('audio/mpeg').send(await cloudSpeech(text,{voice:req.body.elevenVoice,model:req.body.speechModel,speed:[0.8,0.95,1.08].includes(req.body.speed)?req.body.speed:undefined}));}
+      try {return res.type('audio/mpeg').send(await cloudSpeech(text,{voice:req.body.elevenVoice,model:req.body.speechModel,language:storyLocale(req.body.language),speed:[0.8,0.95,1.08].includes(req.body.speed)?req.body.speed:undefined}));}
       catch {console.warn('ElevenLabs narration unavailable. Trying local narration.');}
     }
     if (!req.body.tts) return res.status(503).json({error:'Cloud narration unavailable. Use a device voice.'});
