@@ -21,7 +21,7 @@ app.use('/api', (req, res, next) => {
   if (req.method === 'POST' && !req.is('application/json')) return res.sendStatus(415);
   next();
 });
-app.get('/api/providers', (req, res) => res.json(providers));
+app.get('/api/providers', (req, res) => res.json({...providers, defaults:{openrouterModel:process.env.OPENROUTER_MODEL||'openrouter/free',speechModel:process.env.ELEVENLABS_MODEL||'eleven_flash_v2_5',imageModel:process.env.HF_IMAGE_MODEL||'black-forest-labs/FLUX.1-schnell',videoModel:process.env.HF_VIDEO_MODEL||'Wan-AI/Wan2.2-TI2V-5B'}}));
 app.use(express.static('public'));
 app.use('/vendor',express.static('node_modules/jspdf/dist'));
 function localURL(value, fallback) {
@@ -48,11 +48,16 @@ app.post('/api/story',async(req,res,next)=>{try{
    .filter(choice=>typeof choice==='string')
    .map(choice=>choice.trim())
    .filter(choice=>choice && !/^(?:choice|option)\s*\d*$/i.test(choice)))].slice(0,3);
- if(!ending&&story.choices.length<2) throw Error('The model did not provide adventure choices. Please try again.');
+ if(!ending&&story.choices.length<3) {
+   const scene=story.paragraphs.at(-1);
+   const suggestions=/forest|woods|tree/i.test(scene)?['Follow the trail between the trees','Ask a woodland friend for help','Pause and listen to the forest']:/sea|ocean|shore/i.test(scene)?['Explore along the shore','Ask a sea creature for help','Look for clues by the water']:['Look nearby for a clue','Ask a friend what they noticed','Take a quiet moment to make a plan'];
+   const combined=[...new Set([...story.choices,...suggestions])].slice(0,3);
+   story.choices=combined;
+ }
  return story;
  }
- if(providers.openrouter){
-   try {return res.json({...parseChapter(await cloudStory(prompt,chapterFormat)),provider:'OpenRouter'});}
+ if(providers.openrouter && req.body.textProvider!=='ollama'){
+   try {return res.json({...parseChapter(await cloudStory(prompt,chapterFormat,req.body.openrouterModel)),provider:'OpenRouter'});}
    catch {console.warn('OpenRouter did not return a usable chapter. Trying Ollama.');}
  }
  if(!model || /:cloud$/i.test(model)) throw Error('Choose an installed Ollama fallback model in Settings.');
@@ -68,13 +73,13 @@ app.post('/api/story',async(req,res,next)=>{try{
  try {res.json({...parseChapter(data.message.content),provider:'Ollama'});}
  catch(e){if(e instanceof SyntaxError) throw Error('The model returned an incomplete story. Retry or choose another local story model in Settings.');throw e;}
  }catch(e){next(e)}});
-app.post('/api/cover',async(req,res,next)=>{try{if(providers.media){try{const image=await cloudMedia('image', 'Gentle child-friendly watercolor picture book cover, no text. '+String(req.body.prompt).slice(0,1200));if(!['image/png','image/jpeg','image/webp'].includes(image.type))throw Error('Missing cover');return res.json({image:'data:'+image.type+';base64,'+Buffer.from(await image.arrayBuffer()).toString('base64'),provider:'Hugging Face'});}catch{console.warn('Hugging Face cover unavailable. Trying Automatic1111.');}}const r=await request(localURL(req.body.automatic,'http://localhost:7860')+'/sdapi/v1/txt2img',{prompt:`children's picture book illustration, soft watercolor, warm moonlight, cozy, whimsical, ${String(req.body.prompt).slice(0,1200)}`,negative_prompt:'text, letters, watermark, scary, violence, nudity',steps:20,width:512,height:640,batch_size:1});const data=await r.json();if(!data.images?.[0])throw Error('No image returned.');res.json({image:'data:image/png;base64,'+data.images[0]});}catch(e){next(e)}});
+app.post('/api/cover',async(req,res,next)=>{try{if(providers.media && req.body.imageProvider!=='automatic'){try{const image=await cloudMedia('image', 'Gentle child-friendly watercolor picture book cover, no text. '+String(req.body.prompt).slice(0,1200),req.body.imageModel);if(!['image/png','image/jpeg','image/webp'].includes(image.type))throw Error('Missing cover');return res.json({image:'data:'+image.type+';base64,'+Buffer.from(await image.arrayBuffer()).toString('base64'),provider:'Hugging Face'});}catch{console.warn('Hugging Face cover unavailable. Trying Automatic1111.');}}const r=await request(localURL(req.body.automatic,'http://localhost:7860')+'/sdapi/v1/txt2img',{prompt:`children's picture book illustration, soft watercolor, warm moonlight, cozy, whimsical, ${String(req.body.prompt).slice(0,1200)}`,negative_prompt:'text, letters, watermark, scary, violence, nudity',steps:20,width:512,height:640,batch_size:1});const data=await r.json();if(!data.images?.[0])throw Error('No image returned.');res.json({image:'data:image/png;base64,'+data.images[0]});}catch(e){next(e)}});
 app.post('/api/speech', async (req, res, next) => {
   try {
     const text = String(req.body.text || '').slice(0, 10000);
     if (!text.trim()) return res.status(400).json({error:'No story text to narrate.'});
-    if (providers.elevenlabs) {
-      try {return res.type('audio/mpeg').send(await cloudSpeech(text));}
+    if (providers.elevenlabs && !['kokoro','device'].includes(req.body.speechProvider)) {
+      try {return res.type('audio/mpeg').send(await cloudSpeech(text,{voice:req.body.elevenVoice,model:req.body.speechModel,speed:[0.8,0.95,1.08].includes(req.body.speed)?req.body.speed:undefined}));}
       catch {console.warn('ElevenLabs narration unavailable. Trying local narration.');}
     }
     if (!req.body.tts) return res.status(503).json({error:'Cloud narration unavailable. Use a device voice.'});
@@ -89,7 +94,7 @@ app.post('/api/video', async (req, res) => {
   const scene = String(req.body.prompt || '').trim().slice(0, 1200);
   if (!scene) return res.status(400).json({error:'A scene description is required.'});
   try {
-    const result = await cloudMedia('video', `Gentle child-friendly storybook animation, no text. ${scene}`);
+    const result = await cloudMedia('video', `Gentle child-friendly storybook animation, no text. ${scene}`, req.body.videoModel);
     if (!result.type?.startsWith('video/')) throw new Error('Missing video');
     res.type(result.type).send(Buffer.from(await result.arrayBuffer()));
   } catch {
